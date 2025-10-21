@@ -1,61 +1,41 @@
-import { eq, and, lt, desc, exists } from "drizzle-orm";
-
-import {
-  messages,
-  users,
-  members,
-  type Message,
-  type Member,
-  type User,
-  type Channel,
-} from "../db/schema";
-import { v4 as uuidv4 } from "uuid";
+// src/services/messages.service.ts
 import { db } from "../db/database";
+import { messages, users, members, Message } from "../db/schema";
+import { eq, and, lt } from "drizzle-orm";
 
 const MESSAGES_BATCH = 10;
 
-export class MessagesService {
-  /**
-   * Get messages for a channel with pagination
-   */
-  async getMessages(
-    channelId: string,
-    cursor: string | null,
-    userId: string
-  ): Promise<{
-    items: (Message & {
-      member: Member & {
-        user: User;
-      };
-    })[];
-    nextCursor: string | null;
-  }> {
-    // Verify user has access to this channel
-    const channel = await db.query.channels.findFirst({
-      where: (channels, { eq }) => eq(channels.id, channelId),
-      with: {
-        server: {
-          with: {
-            members: {
-              where: (members, { eq }) => eq(members.userId, userId),
-            },
-          },
-        },
-      },
-    });
+interface CreateMessageParams {
+  content: string;
+  fileUrl?: string;
+  channelId: string;
+  serverId: string;
+  profileId: string;
+}
 
-    if (!channel || channel.server.members.length === 0) {
-      throw new Error("Channel not found or access denied");
-    }
+interface UpdateMessageParams {
+  messageId: string;
+  content: string;
+  profileId: string;
+}
 
-    let messageList: (Message & {
-      member: Member & {
-        user: User;
-      };
-    })[] = [];
+interface DeleteMessageParams {
+  messageId: string;
+  profileId: string;
+}
+
+interface ToggleReactionParams {
+  messageId: string;
+  emoji: string;
+  profileId: string;
+}
+
+class MessagesService {
+  async getMessages(channelId: string, cursor?: string) {
+    let messagesList: Message[] = [];
 
     if (cursor) {
-      messageList = await db.query.messages.findMany({
+      messagesList = await db.query.messages.findMany({
         where: (messages, { eq, and, lt }) =>
           and(eq(messages.channelId, channelId), lt(messages.id, cursor)),
         limit: MESSAGES_BATCH,
@@ -69,7 +49,7 @@ export class MessagesService {
         orderBy: (messages, { desc }) => [desc(messages.createdAt)],
       });
     } else {
-      messageList = await db.query.messages.findMany({
+      messagesList = await db.query.messages.findMany({
         where: (messages, { eq }) => eq(messages.channelId, channelId),
         limit: MESSAGES_BATCH,
         with: {
@@ -84,43 +64,24 @@ export class MessagesService {
     }
 
     let nextCursor = null;
-    if (messageList.length === MESSAGES_BATCH) {
-      nextCursor = messageList[MESSAGES_BATCH - 1].id;
+    if (messagesList.length === MESSAGES_BATCH) {
+      nextCursor = messagesList[MESSAGES_BATCH - 1].id;
     }
 
-    return {
-      items: messageList,
-      nextCursor,
-    };
+    return { items: messagesList, nextCursor };
   }
 
-  /**
-   * Create a new message
-   */
-  async createMessage(
-    content: string,
-    fileUrl: string | null,
-    channelId: string,
-    serverId: string,
-    profileId: string
-  ): Promise<
-    Message & {
-      member: Member & {
-        user: User;
-      };
-      channel: Channel;
-    }
-  > {
-    if (!content || !channelId || !serverId || !profileId) {
-      throw new Error("Missing required fields: content, channelId, serverId");
-    }
+  async createMessage(params: CreateMessageParams) {
+    const { content, fileUrl, channelId, serverId, profileId } = params;
 
+    // Verify user exists
     const [user] = await db.select().from(users).where(eq(users.id, profileId));
 
     if (!user) {
       throw new Error("User not found");
     }
 
+    // Verify server exists and user is a member
     const server = await db.query.servers.findFirst({
       where: (servers, { eq, exists }) =>
         and(
@@ -146,6 +107,7 @@ export class MessagesService {
       throw new Error("Server not found");
     }
 
+    // Verify channel exists
     const channel = await db.query.channels.findFirst({
       where: (channels, { eq, and }) =>
         and(eq(channels.id, channelId), eq(channels.serverId, serverId)),
@@ -155,25 +117,27 @@ export class MessagesService {
       throw new Error("Channel not found");
     }
 
-    const member = server.members.find((member) => member.userId === profileId);
+    // Find the member
+    const member = server.members.find((m) => m.userId === profileId);
 
     if (!member) {
       throw new Error("Member not found");
     }
 
+    // Create the message
     const [message] = await db
       .insert(messages)
       .values({
-        id: uuidv4(),
         content,
-        fileUrl: fileUrl || null,
-        channelId: channelId,
+        fileUrl,
+        channelId,
         memberId: member.id,
         createdAt: new Date(),
         updatedAt: new Date(),
       })
       .returning();
 
+    // Get the complete message with relations
     const result = await db.query.messages.findFirst({
       where: (messages, { eq }) => eq(messages.id, message.id),
       with: {
@@ -186,43 +150,20 @@ export class MessagesService {
       },
     });
 
-    if (!result) {
-      throw new Error("Failed to create message");
-    }
-
     return result;
   }
 
-  /**
-   * Update a message
-   */
-  async updateMessage(
-    messageId: string,
-    content: string,
-    profileId: string,
-    channelId: string
-  ): Promise<
-    Message & {
-      member: Member & {
-        user: User;
-      };
-      channel: Channel;
-    }
-  > {
-    if (!content || !profileId) {
-      throw new Error("Missing required fields: content, profileId");
-    }
+  async updateMessage(params: UpdateMessageParams) {
+    const { messageId, content, profileId } = params;
 
-    if (!messageId) {
-      throw new Error("Message ID is required");
-    }
-
+    // Verify user exists
     const [user] = await db.select().from(users).where(eq(users.id, profileId));
 
     if (!user) {
       throw new Error("User not found");
     }
 
+    // Get the existing message
     const existingMessage = await db.query.messages.findFirst({
       where: (messages, { eq }) => eq(messages.id, messageId),
       with: {
@@ -239,6 +180,7 @@ export class MessagesService {
       throw new Error("Message not found");
     }
 
+    // Check permissions
     const isMessageOwner = existingMessage.member.userId === profileId;
     const isAdmin = existingMessage.member.role === "ADMIN";
     const isModerator = existingMessage.member.role === "MODERATOR";
@@ -248,6 +190,7 @@ export class MessagesService {
       throw new Error("Unauthorized: You can't edit messages");
     }
 
+    // Update the message
     const [updatedMessage] = await db
       .update(messages)
       .set({
@@ -257,6 +200,7 @@ export class MessagesService {
       .where(eq(messages.id, messageId))
       .returning();
 
+    // Get the complete updated message
     const result = await db.query.messages.findFirst({
       where: (messages, { eq }) => eq(messages.id, updatedMessage.id),
       with: {
@@ -269,31 +213,20 @@ export class MessagesService {
       },
     });
 
-    if (!result) {
-      throw new Error("Failed to update message");
-    }
-
     return result;
   }
 
-  /**
-   * Delete a message (soft delete)
-   */
-  async deleteMessage(
-    messageId: string,
-    profileId: string,
-    channelId: string
-  ): Promise<Message> {
-    if (!messageId || !profileId) {
-      throw new Error("Missing required fields: messageId, profileId");
-    }
+  async deleteMessage(params: DeleteMessageParams) {
+    const { messageId, profileId } = params;
 
+    // Verify user exists
     const [user] = await db.select().from(users).where(eq(users.id, profileId));
 
     if (!user) {
       throw new Error("User not found");
     }
 
+    // Get the existing message
     const existingMessage = await db.query.messages.findFirst({
       where: (messages, { eq }) => eq(messages.id, messageId),
       with: {
@@ -310,6 +243,7 @@ export class MessagesService {
       throw new Error("Message not found");
     }
 
+    // Check permissions
     const isMessageOwner = existingMessage.member.userId === profileId;
     const isAdmin = existingMessage.member.role === "ADMIN";
     const isModerator = existingMessage.member.role === "MODERATOR";
@@ -321,43 +255,21 @@ export class MessagesService {
       );
     }
 
-    const [deletedMessage] = await db
+    // Soft delete the message
+    await db
       .update(messages)
       .set({
         deleted: true,
         content: "This message was deleted",
         updatedAt: new Date(),
       })
-      .where(eq(messages.id, messageId))
-      .returning();
-
-    return deletedMessage;
+      .where(eq(messages.id, messageId));
   }
 
-  /**
-   * Toggle reaction on a message
-   */
-  async toggleReaction(
-    messageId: string,
-    emoji: string,
-    profileId: string,
-    channelId: string
-  ): Promise<
-    Message & {
-      member: Member & {
-        user: User;
-      };
-      channel: Channel;
-    }
-  > {
-    if (!emoji || !profileId) {
-      throw new Error("Missing emoji or profileId");
-    }
+  async toggleReaction(params: ToggleReactionParams) {
+    const { messageId, emoji, profileId } = params;
 
-    if (!channelId) {
-      throw new Error("Missing channelId");
-    }
-
+    // Get the message
     const message = await db.query.messages.findFirst({
       where: (messages, { eq }) => eq(messages.id, messageId),
     });
@@ -366,8 +278,8 @@ export class MessagesService {
       throw new Error("Message not found");
     }
 
+    // Toggle the reaction
     let updatedReactions = message.reactions ?? [];
-
     const reactionKey = `${emoji}:${profileId}`;
     const hasReacted = updatedReactions.includes(reactionKey);
 
@@ -377,6 +289,7 @@ export class MessagesService {
       updatedReactions.push(reactionKey);
     }
 
+    // Update reactions
     const [updatedMessage] = await db
       .update(messages)
       .set({
@@ -386,6 +299,7 @@ export class MessagesService {
       .where(eq(messages.id, messageId))
       .returning();
 
+    // Get the complete updated message
     const result = await db.query.messages.findFirst({
       where: (messages, { eq }) => eq(messages.id, updatedMessage.id),
       with: {
@@ -398,55 +312,7 @@ export class MessagesService {
       },
     });
 
-    if (!result) {
-      throw new Error("Failed to update reaction");
-    }
-
     return result;
-  }
-
-  /**
-   * Get a single message by ID
-   */
-  async getMessageById(
-    messageId: string,
-    userId: string
-  ): Promise<
-    | (Message & {
-        member: Member & {
-          user: User;
-        };
-        channel: Channel;
-      })
-    | null
-  > {
-    const message = await db.query.messages.findFirst({
-      where: (messages, { eq }) => eq(messages.id, messageId),
-      with: {
-        member: {
-          with: {
-            user: true,
-          },
-        },
-        channel: {
-          with: {
-            server: {
-              with: {
-                members: {
-                  where: (members, { eq }) => eq(members.userId, userId),
-                },
-              },
-            },
-          },
-        },
-      },
-    });
-
-    if (!message || message.channel.server.members.length === 0) {
-      return null;
-    }
-
-    return message;
   }
 }
 

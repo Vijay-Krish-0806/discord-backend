@@ -6,9 +6,8 @@ import { createServer } from "http";
 import { Server } from "socket.io";
 import cors from "cors";
 import helmet from "helmet";
-import morgan from "morgan";
 import { connectToDB } from "./db/database";
-import { authenticateSocket } from "./middleware/auth";
+import { attachUserFromSocket, authenticateSocket } from "./middleware/auth";
 import { setupSocketServer } from "./socket-server";
 
 // Import all routes
@@ -34,9 +33,6 @@ app.use(
 
 // Security middleware
 app.use(helmet());
-
-// Logging middleware
-app.use(morgan("combined"));
 
 // Socket.IO CORS configuration
 const io = new Server(httpServer, {

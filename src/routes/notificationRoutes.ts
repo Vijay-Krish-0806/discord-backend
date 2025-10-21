@@ -1,40 +1,46 @@
+// src/routes/notifications.routes.ts
 import express from "express";
-import {
-  getUnreadNotificationCount,
-  getUserNotifications,
-  markAllNotificationsAsRead,
-  markNotificationAsRead,
-  deleteNotification,
-  getUserPresence,
-  getUsersPresence,
-} from "../controllers/notificationController";
+import { notificationsController } from "../controllers/notificationController";
+import { authenticate } from "../middleware/authMiddleware";
 
 const router = express.Router();
+
+// All routes require authentication
+router.use(authenticate);
 
 // ========== PRESENCE (ONLINE STATUS) ==========
 // IMPORTANT: These must come BEFORE /:userId routes to avoid route conflicts
 
-// Get online status for multiple users
-router.get("/presence", getUsersPresence);
+// GET /api/notifications/presence?userIds=id1,id2,id3
+router.get("/presence", notificationsController.getUsersPresence);
 
-// Get online status for a single user
-router.get("/presence/:userId", getUserPresence);
+// GET /api/notifications/presence/:userId
+router.get("/presence/:userId", notificationsController.getUserPresence);
 
 // ========== NOTIFICATIONS ==========
 
-// Get unread notification count
-router.get("/count/:userId", getUnreadNotificationCount);
+// GET /api/notifications/count/:userId
+router.get(
+  "/count/:userId",
+  notificationsController.getUnreadNotificationCount
+);
 
-// Get all notifications for a user
-router.get("/:userId", getUserNotifications);
+// GET /api/notifications/:userId?limit=20&offset=0
+router.get("/:userId", notificationsController.getUserNotifications);
 
-// Mark a single notification as read
-router.patch("/:notificationId/read", markNotificationAsRead);
+// PATCH /api/notifications/:notificationId/read
+router.patch(
+  "/:notificationId/read",
+  notificationsController.markNotificationAsRead
+);
 
-// Mark all notifications as read for a user
-router.patch("/:userId/read-all", markAllNotificationsAsRead);
+// PATCH /api/notifications/:userId/read-all
+router.patch(
+  "/:userId/read-all",
+  notificationsController.markAllNotificationsAsRead
+);
 
-// Delete a notification
-router.delete("/:notificationId", deleteNotification);
+// DELETE /api/notifications/:notificationId
+router.delete("/:notificationId", notificationsController.deleteNotification);
 
 export default router;

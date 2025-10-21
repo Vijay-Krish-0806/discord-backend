@@ -1,25 +1,20 @@
+// src/routes/members.routes.ts
 import express from "express";
 import { membersController } from "../controllers/membersController";
-import { authenticateSocket } from "../middleware/auth";
+import { authenticate } from "../middleware/authMiddleware";
 
 const router = express.Router();
 
-// Apply auth middleware to all routes
-router.use(authenticateSocket);
+// All routes require authentication
+router.use(authenticate);
 
 // GET /api/members/current
 router.get("/current", membersController.getCurrentMember);
 
-// GET /api/members?serverId=:serverId
-router.get("/", membersController.getMembersByServer);
-
-// GET /api/members/:memberId
-router.get("/:memberId", membersController.getMemberById);
-
-// DELETE /api/members/:memberId?serverId=:serverId
+// DELETE /api/members/:memberId?serverId=xxx
 router.delete("/:memberId", membersController.deleteMember);
 
-// PATCH /api/members/:memberId?serverId=:serverId
+// PATCH /api/members/:memberId?serverId=xxx
 router.patch("/:memberId", membersController.updateMemberRole);
 
 export default router;

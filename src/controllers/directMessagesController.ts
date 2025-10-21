@@ -1,171 +1,103 @@
-import { Request, Response, NextFunction } from "express";
+// src/controllers/directMessages.controller.ts
+import { Request, Response } from "express";
 import { directMessagesService } from "../services/directMessagesService";
-import { 
-  GetDirectMessagesQuery,
-  CreateDirectMessageRequest,
-  UpdateDirectMessageRequest,
-  ToggleReactionRequest,
-  DirectMessagesResponse,
-  DirectMessageResponse,
-  DeleteMessageResponse
-} from "../types/directMessages";
 
-export class DirectMessagesController {
-  /**
-   * GET /api/direct-messages
-   * Get direct messages with pagination
-   */
-  getDirectMessages = async (
-    req: Request<{}, DirectMessagesResponse, {}, GetDirectMessagesQuery>,
-    res: Response<DirectMessagesResponse>,
-    next: NextFunction
-  ) => {
+interface AuthRequest extends Request {
+  user?: {
+    id: string;
+    email: string;
+  };
+}
+
+class DirectMessagesController {
+  async getDirectMessages(req: AuthRequest, res: Response) {
     try {
-      const { cursor, conversationId } = req.query;
-      const userId = (req as any).user?.id;
+      const { conversationId, cursor } = req.query;
+      const userId = req.user?.id;
 
       if (!userId) {
-        return res.status(401).json({
-          success: false,
-          message: "Unauthorized",
-        });
+        return res.status(401).json({ error: "Unauthorized" });
       }
 
-      if (!conversationId) {
-        return res.status(400).json({
-          success: false,
-          message: "Conversation ID missing",
-        });
+      if (!conversationId || typeof conversationId !== "string") {
+        return res.status(400).json({ error: "ConversationId missing" });
       }
 
       const result = await directMessagesService.getDirectMessages(
         conversationId,
-        cursor || null,
-        userId
+        cursor as string | undefined
       );
 
-      res.json({
-        success: true,
-        data: result,
-      });
-    } catch (error: any) {
-      console.error("[DIRECT_MESSAGES_GET]", error);
-
-      if (error.message === "Conversation not found or access denied") {
-        return res.status(403).json({
-          success: false,
-          message: "Conversation not found or access denied",
-        });
-      }
-
-      res.status(500).json({
-        success: false,
-        message: "Internal server error",
-      });
+      return res.status(200).json(result);
+    } catch (error) {
+      console.error("❌ [Direct Messages GET]", error);
+      return res.status(500).json({ error: "Failed to fetch messages" });
     }
-  };
+  }
 
-  /**
-   * POST /api/direct-messages
-   * Create a new direct message
-   */
-  createDirectMessage = async (
-    req: Request<{}, DirectMessageResponse, CreateDirectMessageRequest>,
-    res: Response<DirectMessageResponse>,
-    next: NextFunction
-  ) => {
+  async createDirectMessage(req: AuthRequest, res: Response) {
     try {
       const { content, fileUrl } = req.body;
-      const { conversationId } = req.query;
-      const profileId = (req as any).user?.id;
+      const { conversationId, profileId } = req.query;
 
-      if (!profileId) {
-        return res.status(401).json({
-          success: false,
-          message: "Unauthorized",
+      if (!content || !conversationId || !profileId) {
+        return res.status(400).json({
+          error: "Missing required fields: content, conversationId, profileId",
         });
       }
 
-      const result = await directMessagesService.createDirectMessage(
+      const result = await directMessagesService.createDirectMessage({
         content,
-        fileUrl || null,
-        conversationId as string,
-        profileId
-      );
+        fileUrl,
+        conversationId: conversationId as string,
+        profileId: profileId as string,
+      });
 
-      // Socket.io emission
-      const addKey = `chat:${conversationId}:messages`;
+      // Socket.io emit
       const io = req.app.get("io");
-
       if (io && result) {
+        const addKey = `chat:${conversationId}:messages`;
         io.to(conversationId as string).emit(addKey, result);
         console.log(`📢 Emitted message to ${addKey}`);
       }
 
-      res.status(201).json({
-        success: true,
-        data: result,
-      });
-    } catch (error: any) {
-      console.error("[DIRECT_MESSAGE_CREATE]", error);
+      return res.status(201).json(result);
+    } catch (error) {
+      console.error("❌ Error creating message:", error);
 
-      if (error.message === "Missing required fields: content, conversationId, profileId") {
-        return res.status(400).json({
-          success: false,
-          message: "Missing required fields",
-        });
+      if (error instanceof Error) {
+        if (error.message.includes("not found")) {
+          return res.status(404).json({ error: error.message });
+        }
       }
 
-      if (error.message === "User not found" || 
-          error.message === "Conversation not found" || 
-          error.message === "Member not found") {
-        return res.status(404).json({
-          success: false,
-          message: error.message,
-        });
-      }
-
-      res.status(500).json({
-        success: false,
-        message: "Failed to send message",
-      });
+      return res.status(500).json({ error: "Failed to send message" });
     }
-  };
+  }
 
-  /**
-   * PATCH /api/direct-messages/:directMessageId
-   * Update a direct message
-   */
-  updateDirectMessage = async (
-    req: Request<{ directMessageId: string }, DirectMessageResponse, UpdateDirectMessageRequest>,
-    res: Response<DirectMessageResponse>,
-    next: NextFunction
-  ) => {
+  async updateDirectMessage(req: AuthRequest, res: Response) {
     try {
       const { directMessageId } = req.params;
       const { content } = req.body;
-      const { conversationId } = req.query;
-      const profileId = (req as any).user?.id;
+      const { profileId, conversationId } = req.query;
 
-      if (!profileId) {
-        return res.status(401).json({
-          success: false,
-          message: "Unauthorized",
+      if (!content || !profileId || !directMessageId || !conversationId) {
+        return res.status(400).json({
+          error: "Missing required fields: content, profileId, conversationId",
         });
       }
 
-      const result = await directMessagesService.updateDirectMessage(
+      const result = await directMessagesService.updateDirectMessage({
         directMessageId,
         content,
-        profileId,
-        conversationId as string
-      );
+        profileId: profileId as string,
+        conversationId: conversationId as string,
+      });
 
-      // Socket.io emission
-      const updateKey = `chat:${conversationId}:messages:update`;
+      // Socket.io emit
       const io = req.app.get("io");
-
       if (io && result) {
+        const updateKey = `chat:${conversationId}:messages:update`;
         io.to(conversationId as string).emit(updateKey, {
           action: "update",
           message: result,
@@ -173,76 +105,48 @@ export class DirectMessagesController {
         console.log(`📢 Emitted direct message update to ${updateKey}`);
       }
 
-      res.json({
-        success: true,
-        data: result,
-      });
-    } catch (error: any) {
-      console.error("[DIRECT_MESSAGE_UPDATE]", error);
+      return res.status(200).json(result);
+    } catch (error) {
+      console.error("❌ Error updating direct message:", error);
 
-      if (error.message === "Missing required fields: content, profileId, conversationId") {
-        return res.status(400).json({
-          success: false,
-          message: "Missing required fields",
-        });
+      if (error instanceof Error) {
+        if (error.message.includes("not found")) {
+          return res.status(404).json({ error: error.message });
+        }
+        if (
+          error.message.includes("Unauthorized") ||
+          error.message.includes("Not authorized")
+        ) {
+          return res.status(403).json({ error: error.message });
+        }
       }
 
-      if (error.message === "User not found" || 
-          error.message === "Conversation not found" ||
-          error.message === "Message not found") {
-        return res.status(404).json({
-          success: false,
-          message: error.message,
-        });
-      }
-
-      if (error.message === "Not authorized for this conversation" ||
-          error.message === "Unauthorized: You can only edit your own messages") {
-        return res.status(403).json({
-          success: false,
-          message: error.message,
-        });
-      }
-
-      res.status(500).json({
-        success: false,
-        message: "Failed to update message",
-      });
+      return res.status(500).json({ error: "Failed to update message" });
     }
-  };
+  }
 
-  /**
-   * DELETE /api/direct-messages/:directMessageId
-   * Delete a direct message
-   */
-  deleteDirectMessage = async (
-    req: Request<{ directMessageId: string }, DeleteMessageResponse, {}>,
-    res: Response<DeleteMessageResponse>,
-    next: NextFunction
-  ) => {
+  async deleteDirectMessage(req: AuthRequest, res: Response) {
     try {
       const { directMessageId } = req.params;
-      const { conversationId } = req.query;
-      const profileId = (req as any).user?.id;
+      const { profileId, conversationId } = req.query;
 
-      if (!profileId) {
-        return res.status(401).json({
-          success: false,
-          message: "Unauthorized",
+      if (!directMessageId || !profileId || !conversationId) {
+        return res.status(400).json({
+          error:
+            "Missing required fields: directMessageId, profileId, conversationId",
         });
       }
 
-      const deletedMessage = await directMessagesService.deleteDirectMessage(
+      await directMessagesService.deleteDirectMessage({
         directMessageId,
-        profileId,
-        conversationId as string
-      );
+        profileId: profileId as string,
+        conversationId: conversationId as string,
+      });
 
-      // Socket.io emission
-      const updateKey = `chat:${conversationId}:messages:update`;
+      // Socket.io emit
       const io = req.app.get("io");
-
       if (io) {
+        const updateKey = `chat:${conversationId}:messages:update`;
         io.to(conversationId as string).emit(updateKey, {
           action: "delete",
           messageId: directMessageId,
@@ -250,75 +154,53 @@ export class DirectMessagesController {
         console.log(`📢 Emitted direct message deletion to ${updateKey}`);
       }
 
-      res.json({
+      return res.status(200).json({
         success: true,
         message: "Message deleted successfully",
-        deletedMessage,
       });
-    } catch (error: any) {
-      console.error("[DIRECT_MESSAGE_DELETE]", error);
+    } catch (error) {
+      console.error("❌ Error deleting direct message:", error);
 
-      if (error.message === "Missing required fields: directMessageId, profileId, conversationId") {
-        return res.status(400).json({
-          success: false,
-          message: "Missing required fields",
-        });
+      if (error instanceof Error) {
+        if (error.message.includes("not found")) {
+          return res.status(404).json({ error: error.message });
+        }
+        if (
+          error.message.includes("Unauthorized") ||
+          error.message.includes("Not authorized")
+        ) {
+          return res.status(403).json({ error: error.message });
+        }
       }
 
-      if (error.message === "User not found" || 
-          error.message === "Conversation not found" ||
-          error.message === "Message not found") {
-        return res.status(404).json({
-          success: false,
-          message: error.message,
-        });
-      }
-
-      if (error.message === "Not authorized for this conversation" ||
-          error.message === "Unauthorized: You can only delete your own messages") {
-        return res.status(403).json({
-          success: false,
-          message: error.message,
-        });
-      }
-
-      res.status(500).json({
-        success: false,
-        message: "Failed to delete message",
-      });
+      return res.status(500).json({ error: "Failed to delete message" });
     }
-  };
+  }
 
-  /**
-   * POST /api/direct-messages/:directMessageId/reaction
-   * Toggle reaction on a direct message
-   */
-  toggleDirectMessageReaction = async (
-    req: Request<{ directMessageId: string }, DirectMessageResponse, ToggleReactionRequest>,
-    res: Response<DirectMessageResponse>,
-    next: NextFunction
-  ) => {
+  async toggleDirectMessageReaction(req: AuthRequest, res: Response) {
     try {
       const { directMessageId } = req.params;
       const { emoji } = req.body;
-      const { conversationId } = req.query;
-      const profileId = (req as any).user?.id;
+      const { profileId, conversationId } = req.query;
 
-      if (!profileId) {
-        return res.status(401).json({
-          success: false,
-          message: "Unauthorized",
+      if (!emoji || !profileId || !conversationId) {
+        return res.status(400).json({
+          error: "Missing required fields: emoji, profileId, conversationId",
         });
       }
 
-      const result = await directMessagesService.toggleDirectMessageReaction(
+      if (!directMessageId) {
+        return res.status(400).json({ error: "Missing directMessageId" });
+      }
+
+      const result = await directMessagesService.toggleDirectMessageReaction({
         directMessageId,
         emoji,
-        profileId,
-        conversationId as string
-      );
+        profileId: profileId as string,
+        conversationId: conversationId as string,
+      });
 
-      // Socket.io emission
+      // Socket.io emit
       const io = req.app.get("io");
       if (io && result) {
         const updateKey = `chat:${conversationId}:messages:update`;
@@ -326,104 +208,27 @@ export class DirectMessagesController {
           action: "reaction",
           message: result,
         });
-        console.log(`📢 Emitted direct message reaction update to ${updateKey}`);
+        console.log(
+          `📢 Emitted direct message reaction update to ${updateKey}`
+        );
       }
 
-      res.json({
-        success: true,
-        data: result,
-      });
-    } catch (error: any) {
-      console.error("[DIRECT_MESSAGE_REACTION]", error);
+      return res.status(200).json(result);
+    } catch (error) {
+      console.error("❌ Error toggling direct message reaction:", error);
 
-      if (error.message === "Missing required fields: emoji, profileId, conversationId") {
-        return res.status(400).json({
-          success: false,
-          message: "Missing required fields",
-        });
+      if (error instanceof Error) {
+        if (error.message.includes("not found")) {
+          return res.status(404).json({ error: error.message });
+        }
+        if (error.message.includes("Not authorized")) {
+          return res.status(403).json({ error: error.message });
+        }
       }
 
-      if (error.message === "Conversation not found" ||
-          error.message === "Message not found") {
-        return res.status(404).json({
-          success: false,
-          message: error.message,
-        });
-      }
-
-      if (error.message === "Not authorized for this conversation") {
-        return res.status(403).json({
-          success: false,
-          message: error.message,
-        });
-      }
-
-      res.status(500).json({
-        success: false,
-        message: "Failed to toggle reaction",
-      });
+      return res.status(500).json({ error: "Failed to toggle reaction" });
     }
-  };
-
-  /**
-   * GET /api/direct-messages/:messageId
-   * Get a single direct message by ID
-   */
-  getDirectMessage = async (
-    req: Request<{ messageId: string }, DirectMessageResponse, {}>,
-    res: Response<DirectMessageResponse>,
-    next: NextFunction
-  ) => {
-    try {
-      const { messageId } = req.params;
-      const userId = (req as any).user?.id;
-
-      if (!userId) {
-        return res.status(401).json({
-          success: false,
-          message: "Unauthorized",
-        });
-      }
-
-      if (!messageId) {
-        return res.status(400).json({
-          success: false,
-          message: "Message ID missing",
-        });
-      }
-
-      const message = await directMessagesService.getDirectMessageById(
-        messageId,
-        userId
-      );
-
-      if (!message) {
-        return res.status(404).json({
-          success: false,
-          message: "Message not found",
-        });
-      }
-
-      res.json({
-        success: true,
-        data: message,
-      });
-    } catch (error: any) {
-      console.error("[DIRECT_MESSAGE_GET]", error);
-
-      if (error.message === "Access denied to this message") {
-        return res.status(403).json({
-          success: false,
-          message: "Access denied to this message",
-        });
-      }
-
-      res.status(500).json({
-        success: false,
-        message: "Internal server error",
-      });
-    }
-  };
+  }
 }
 
 export const directMessagesController = new DirectMessagesController();

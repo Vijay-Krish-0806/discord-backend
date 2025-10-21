@@ -1,394 +1,177 @@
-import { Request, Response, NextFunction } from "express";
+// src/controllers/servers.controller.ts
+import { Request, Response } from "express";
 import { serversService } from "../services/serversService";
-import {
-  CreateServerRequest,
-  UpdateServerRequest,
-  JoinServerRequest,
-  BaseServerResponse,
-  ServerWithDetailsResponse,
-  ServerWithRelationsResponse,
-  ServersListResponse,
-  DeleteServerParams,
-  UpdateServerParams,
-  InviteCodeParams,
-  LeaveServerParams,
-} from "../types/servers";
 
-export class ServersController {
-  /**
-   * POST /api/servers
-   * Create a new server
-   */
-  createServer = async (
-    req: Request<{}, ServerWithRelationsResponse, CreateServerRequest>,
-    res: Response<ServerWithRelationsResponse>,
-    next: NextFunction
-  ) => {
+interface AuthRequest extends Request {
+  user?: {
+    id: string;
+    email: string;
+  };
+}
+
+class ServersController {
+  async createServer(req: AuthRequest, res: Response) {
     try {
       const { name, imageUrl } = req.body;
-      const userId = (req as any).user?.id;
+      const userId = req.user?.id;
 
       if (!userId) {
-        return res.status(401).json({
-          success: false,
-          message: "Unauthorized",
-        });
+        return res.status(401).json({ error: "Unauthorized" });
       }
 
-      const server = await serversService.createServer(name, imageUrl, userId);
+      if (!name) {
+        return res.status(400).json({ error: "Name is required" });
+      }
 
-      res.status(201).json({
-        success: true,
-        data: server,
+      const server = await serversService.createServer({
+        name,
+        imageUrl,
+        userId,
       });
-    } catch (error: any) {
-      console.error("[SERVERS_CREATE]", error);
 
-      if (error.message === "Name and user ID are required") {
-        return res.status(400).json({
-          success: false,
-          message: error.message,
-        });
-      }
-
-      if (error.message === "Failed to create server") {
-        return res.status(500).json({
-          success: false,
-          message: "Failed to create server",
-        });
-      }
-
-      res.status(500).json({
-        success: false,
-        message: "Internal server error",
-      });
+      return res.status(201).json(server);
+    } catch (error) {
+      console.error("[SERVERS_POST]", error);
+      return res.status(500).json({ error: "Internal Error" });
     }
-  };
+  }
 
-  /**
-   * DELETE /api/servers/:serverId
-   * Delete a server
-   */
-  deleteServer = async (
-    req: Request<DeleteServerParams, BaseServerResponse, {}>,
-    res: Response<BaseServerResponse>,
-    next: NextFunction
-  ) => {
+  async deleteServer(req: AuthRequest, res: Response) {
     try {
       const { serverId } = req.params;
-      const userId = (req as any).user?.id;
+      const userId = req.user?.id;
 
       if (!userId) {
-        return res.status(401).json({
-          success: false,
-          message: "Unauthorized",
-        });
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      if (!serverId) {
+        return res.status(400).json({ error: "Server ID is required" });
       }
 
       const server = await serversService.deleteServer(serverId, userId);
 
-      res.json({
-        success: true,
-        data: server[0],
-      });
-    } catch (error: any) {
-      console.error("[SERVER_DELETE]", error);
+      return res.status(200).json(server);
+    } catch (error) {
+      console.error("[SERVER_ID_DELETE]", error);
 
-      if (error.message === "Server not found or unauthorized") {
-        return res.status(404).json({
-          success: false,
-          message: "Server not found or unauthorized",
-        });
+      if (error instanceof Error) {
+        if (
+          error.message.includes("not found") ||
+          error.message.includes("Unauthorized")
+        ) {
+          return res.status(404).json({ error: error.message });
+        }
       }
 
-      res.status(500).json({
-        success: false,
-        message: "Internal server error",
-      });
+      return res.status(500).json({ error: "Internal server error" });
     }
-  };
+  }
 
-  /**
-   * PATCH /api/servers/:serverId
-   * Update a server
-   */
-  updateServer = async (
-    req: Request<UpdateServerParams, BaseServerResponse, UpdateServerRequest>,
-    res: Response<BaseServerResponse>,
-    next: NextFunction
-  ) => {
+  async updateServer(req: AuthRequest, res: Response) {
     try {
       const { serverId } = req.params;
       const { name, imageUrl } = req.body;
-      const userId = (req as any).user?.id;
+      const userId = req.user?.id;
 
       if (!userId) {
-        return res.status(401).json({
-          success: false,
-          message: "Unauthorized",
-        });
+        return res.status(401).json({ error: "Unauthorized" });
       }
 
-      const server = await serversService.updateServer(
+      if (!serverId) {
+        return res.status(400).json({ error: "Server ID is required" });
+      }
+
+      const server = await serversService.updateServer({
         serverId,
-        { name, imageUrl },
+        name,
+        imageUrl,
+        userId,
+      });
+
+      return res.status(200).json(server);
+    } catch (error) {
+      console.error("[SERVER_ID_PATCH]", error);
+
+      if (error instanceof Error) {
+        if (
+          error.message.includes("not found") ||
+          error.message.includes("Unauthorized")
+        ) {
+          return res.status(404).json({ error: error.message });
+        }
+      }
+
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  }
+
+  async regenerateInviteCode(req: AuthRequest, res: Response) {
+    try {
+      const { serverId } = req.params;
+      const userId = req.user?.id;
+
+      if (!userId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      if (!serverId) {
+        return res.status(400).json({ error: "Server id Missing" });
+      }
+
+      const server = await serversService.regenerateInviteCode(
+        serverId,
         userId
       );
 
-      res.json({
-        success: true,
-        data: server,
-      });
-    } catch (error: any) {
-      console.error("[SERVER_UPDATE]", error);
+      return res.status(200).json(server);
+    } catch (error) {
+      console.error("[INVITE_CODE_PATCH]", error);
 
-      if (error.message === "Server not found or unauthorized") {
-        return res.status(404).json({
-          success: false,
-          message: "Server not found or unauthorized",
-        });
+      if (error instanceof Error) {
+        if (
+          error.message.includes("not found") ||
+          error.message.includes("Unauthorized")
+        ) {
+          return res.status(404).json({ error: error.message });
+        }
       }
 
-      res.status(500).json({
-        success: false,
-        message: "Internal server error",
-      });
+      return res.status(500).json({ error: "Internal server error" });
     }
-  };
+  }
 
-  /**
-   * PATCH /api/servers/:serverId/invite-code
-   * Generate new invite code
-   */
-  generateInviteCode = async (
-    req: Request<InviteCodeParams, BaseServerResponse, {}>,
-    res: Response<BaseServerResponse>,
-    next: NextFunction
-  ) => {
+  async leaveServer(req: AuthRequest, res: Response) {
     try {
       const { serverId } = req.params;
-      const userId = (req as any).user?.id;
+      const userId = req.user?.id;
 
       if (!userId) {
-        return res.status(401).json({
-          success: false,
-          message: "Unauthorized",
-        });
+        return res.status(401).json({ error: "Unauthorized" });
       }
 
-      const server = await serversService.generateInviteCode(serverId, userId);
-
-      res.json({
-        success: true,
-        data: server,
-      });
-    } catch (error: any) {
-      console.error("[SERVER_INVITE_CODE]", error);
-
-      if (error.message === "Server not found or unauthorized") {
-        return res.status(404).json({
-          success: false,
-          message: "Server not found or unauthorized",
-        });
-      }
-
-      res.status(500).json({
-        success: false,
-        message: "Internal server error",
-      });
-    }
-  };
-
-  /**
-   * PATCH /api/servers/:serverId/leave
-   * Leave a server
-   */
-  leaveServer = async (
-    req: Request<LeaveServerParams, BaseServerResponse, {}>,
-    res: Response<BaseServerResponse>,
-    next: NextFunction
-  ) => {
-    try {
-      const { serverId } = req.params;
-      const userId = (req as any).user?.id;
-
-      if (!userId) {
-        return res.status(401).json({
-          success: false,
-          message: "Unauthorized",
-        });
+      if (!serverId) {
+        return res.status(400).json({ error: "Server ID is required" });
       }
 
       const server = await serversService.leaveServer(serverId, userId);
 
-      res.json({
-        success: true,
-        data: server,
-      });
-    } catch (error: any) {
-      console.error("[SERVER_LEAVE]", error);
+      return res.status(200).json(server);
+    } catch (error) {
+      console.log("[SERVER_ID_LEAVE]", error);
 
-      if (error.message === "Server not found or you are the owner") {
-        return res.status(400).json({
-          success: false,
-          message: "Server not found or you are the owner",
-        });
+      if (error instanceof Error) {
+        if (
+          error.message.includes("not found") ||
+          error.message.includes("owner")
+        ) {
+          return res.status(404).json({ error: error.message });
+        }
       }
 
-      res.status(500).json({
-        success: false,
-        message: "Internal server error",
-      });
+      return res.status(500).json({ error: "Internal Error" });
     }
-  };
-
-  /**
-   * GET /api/servers/:serverId
-   * Get server by ID
-   */
-  getServerById = async (
-    req: Request<{ serverId: string }, ServerWithDetailsResponse, {}>,
-    res: Response<ServerWithDetailsResponse>,
-    next: NextFunction
-  ) => {
-    try {
-      const { serverId } = req.params;
-      const userId = (req as any).user?.id;
-
-      if (!userId) {
-        return res.status(401).json({
-          success: false,
-          message: "Unauthorized",
-        });
-      }
-
-      const server = await serversService.getServerById(serverId, userId);
-
-      if (!server) {
-        return res.status(404).json({
-          success: false,
-          message: "Server not found",
-        });
-      }
-
-      res.json({
-        success: true,
-        data: server,
-      });
-    } catch (error: any) {
-      console.error("[SERVER_GET]", error);
-
-      if (error.message === "Access denied to this server") {
-        return res.status(403).json({
-          success: false,
-          message: "Access denied to this server",
-        });
-      }
-
-      res.status(500).json({
-        success: false,
-        message: "Internal server error",
-      });
-    }
-  };
-
-  /**
-   * GET /api/servers
-   * Get all servers for current user
-   */
-  getUserServers = async (
-    req: Request<{}, ServersListResponse, {}>,
-    res: Response<ServersListResponse>,
-    next: NextFunction
-  ) => {
-    try {
-      const userId = (req as any).user?.id;
-
-      if (!userId) {
-        return res.status(401).json({
-          success: false,
-          message: "Unauthorized",
-        });
-      }
-
-      const servers = await serversService.getUserServers(userId);
-
-      res.json({
-        success: true,
-        data: servers,
-      });
-    } catch (error: any) {
-      console.error("[SERVERS_GET]", error);
-      res.status(500).json({
-        success: false,
-        message: "Internal server error",
-      });
-    }
-  };
-
-  /**
-   * POST /api/servers/join
-   * Join a server using invite code
-   */
-  joinServer = async (
-    req: Request<{}, ServerWithDetailsResponse, JoinServerRequest>,
-    res: Response<ServerWithDetailsResponse>,
-    next: NextFunction
-  ) => {
-    try {
-      const { inviteCode } = req.body;
-      const userId = (req as any).user?.id;
-
-      if (!userId) {
-        return res.status(401).json({
-          success: false,
-          message: "Unauthorized",
-        });
-      }
-
-      if (!inviteCode) {
-        return res.status(400).json({
-          success: false,
-          message: "Invite code is required",
-        });
-      }
-
-      const server = await serversService.joinServer(inviteCode, userId);
-
-      res.status(201).json({
-        success: true,
-        data: server,
-      });
-    } catch (error: any) {
-      console.error("[SERVER_JOIN]", error);
-
-      if (error.message === "Invalid invite code") {
-        return res.status(404).json({
-          success: false,
-          message: "Invalid invite code",
-        });
-      }
-
-      if (error.message === "Already a member of this server") {
-        return res.status(400).json({
-          success: false,
-          message: "Already a member of this server",
-        });
-      }
-
-      if (error.message === "Failed to join server") {
-        return res.status(500).json({
-          success: false,
-          message: "Failed to join server",
-        });
-      }
-
-      res.status(500).json({
-        success: false,
-        message: "Internal server error",
-      });
-    }
-  };
+  }
 }
 
 export const serversController = new ServersController();

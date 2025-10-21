@@ -1,53 +1,40 @@
-import { eq, and, lt, desc, or } from "drizzle-orm";
-
-import {
-  directMessages,
-  conversations,
-  users,
-  type DirectMessage,
-  type Member,
-  type User,
-  type Conversation,
-} from "../db/schema";
-import { v4 as uuidv4 } from "uuid";
+// src/services/directMessages.service.ts
 import { db } from "../db/database";
+import { directMessages, users, DirectMessage } from "../db/schema";
+import { eq, and, lt } from "drizzle-orm";
 
 const MESSAGES_BATCH = 10;
 
-export class DirectMessagesService {
-  /**
-   * Get direct messages for a conversation with pagination
-   */
-  async getDirectMessages(
-    conversationId: string,
-    cursor: string | null,
-    userId: string
-  ): Promise<{
-    items: (DirectMessage & {
-      member: Member & {
-        user: User;
-      };
-    })[];
-    nextCursor: string | null;
-  }> {
-    // Verify user has access to this conversation
-    const conversation = await db.query.conversations.findFirst({
-      where: (conversations, { eq, or }) =>
-        or(
-          eq(conversations.memberOneId, userId),
-          eq(conversations.memberTwoId, userId)
-        ),
-    });
+interface CreateDirectMessageParams {
+  content: string;
+  fileUrl?: string;
+  conversationId: string;
+  profileId: string;
+}
 
-    if (!conversation) {
-      throw new Error("Conversation not found or access denied");
-    }
+interface UpdateDirectMessageParams {
+  directMessageId: string;
+  content: string;
+  profileId: string;
+  conversationId: string;
+}
 
-    let messages: (DirectMessage & {
-      member: Member & {
-        user: User;
-      };
-    })[] = [];
+interface DeleteDirectMessageParams {
+  directMessageId: string;
+  profileId: string;
+  conversationId: string;
+}
+
+interface ToggleReactionParams {
+  directMessageId: string;
+  emoji: string;
+  profileId: string;
+  conversationId: string;
+}
+
+class DirectMessagesService {
+  async getDirectMessages(conversationId: string, cursor?: string) {
+    let messages: DirectMessage[] = [];
 
     if (cursor) {
       messages = await db.query.directMessages.findMany({
@@ -87,40 +74,20 @@ export class DirectMessagesService {
       nextCursor = messages[MESSAGES_BATCH - 1].id;
     }
 
-    return {
-      items: messages,
-      nextCursor,
-    };
+    return { items: messages, nextCursor };
   }
 
-  /**
-   * Create a new direct message
-   */
-  async createDirectMessage(
-    content: string,
-    fileUrl: string | null,
-    conversationId: string,
-    profileId: string
-  ): Promise<
-    DirectMessage & {
-      member: Member & {
-        user: User;
-      };
-      conversation: Conversation;
-    }
-  > {
-    if (!content || !conversationId || !profileId) {
-      throw new Error(
-        "Missing required fields: content, conversationId, profileId"
-      );
-    }
+  async createDirectMessage(params: CreateDirectMessageParams) {
+    const { content, fileUrl, conversationId, profileId } = params;
 
+    // Verify user exists
     const [user] = await db.select().from(users).where(eq(users.id, profileId));
 
     if (!user) {
       throw new Error("User not found");
     }
 
+    // Get conversation and verify user is part of it
     const conversation = await db.query.conversations.findFirst({
       where: (conversations, { eq }) => eq(conversations.id, conversationId),
       with: {
@@ -141,6 +108,7 @@ export class DirectMessagesService {
       throw new Error("Conversation not found");
     }
 
+    // Determine which member is sending the message
     const member =
       conversation.memberOne.userId === profileId
         ? conversation.memberOne
@@ -150,19 +118,20 @@ export class DirectMessagesService {
       throw new Error("Member not found");
     }
 
+    // Create the message
     const [message] = await db
       .insert(directMessages)
       .values({
-        id: uuidv4(),
         content,
-        fileUrl: fileUrl || null,
-        conversationId: conversationId,
+        fileUrl,
+        conversationId,
         memberId: member.id,
         createdAt: new Date(),
         updatedAt: new Date(),
       })
       .returning();
 
+    // Get the complete message with relations
     const result = await db.query.directMessages.findFirst({
       where: (messages, { eq }) => eq(messages.id, message.id),
       with: {
@@ -175,35 +144,13 @@ export class DirectMessagesService {
       },
     });
 
-    if (!result) {
-      throw new Error("Failed to create message");
-    }
-
     return result;
   }
 
-  /**
-   * Update a direct message
-   */
-  async updateDirectMessage(
-    directMessageId: string,
-    content: string,
-    profileId: string,
-    conversationId: string
-  ): Promise<
-    DirectMessage & {
-      member: Member & {
-        user: User;
-      };
-      conversation: Conversation;
-    }
-  > {
-    if (!content || !profileId || !directMessageId || !conversationId) {
-      throw new Error(
-        "Missing required fields: content, profileId, conversationId"
-      );
-    }
+  async updateDirectMessage(params: UpdateDirectMessageParams) {
+    const { directMessageId, content, profileId, conversationId } = params;
 
+    // Verify user exists
     const [user] = await db.select().from(users).where(eq(users.id, profileId));
 
     if (!user) {
@@ -231,6 +178,7 @@ export class DirectMessagesService {
       throw new Error("Not authorized for this conversation");
     }
 
+    // Get the existing message
     const existingMessage = await db.query.directMessages.findFirst({
       where: (messages, { eq }) => eq(messages.id, directMessageId),
       with: {
@@ -246,12 +194,14 @@ export class DirectMessagesService {
       throw new Error("Message not found");
     }
 
+    // Check if user owns the message
     const isMessageOwner = existingMessage.member.userId === profileId;
 
     if (!isMessageOwner) {
       throw new Error("Unauthorized: You can only edit your own messages");
     }
 
+    // Update the message
     const [updatedMessage] = await db
       .update(directMessages)
       .set({
@@ -261,6 +211,7 @@ export class DirectMessagesService {
       .where(eq(directMessages.id, directMessageId))
       .returning();
 
+    // Get the complete updated message
     const result = await db.query.directMessages.findFirst({
       where: (messages, { eq }) => eq(messages.id, updatedMessage.id),
       with: {
@@ -273,27 +224,13 @@ export class DirectMessagesService {
       },
     });
 
-    if (!result) {
-      throw new Error("Failed to update message");
-    }
-
     return result;
   }
 
-  /**
-   * Delete a direct message (soft delete)
-   */
-  async deleteDirectMessage(
-    directMessageId: string,
-    profileId: string,
-    conversationId: string
-  ): Promise<DirectMessage> {
-    if (!directMessageId || !profileId || !conversationId) {
-      throw new Error(
-        "Missing required fields: directMessageId, profileId, conversationId"
-      );
-    }
+  async deleteDirectMessage(params: DeleteDirectMessageParams) {
+    const { directMessageId, profileId, conversationId } = params;
 
+    // Verify user exists
     const [user] = await db.select().from(users).where(eq(users.id, profileId));
 
     if (!user) {
@@ -321,6 +258,7 @@ export class DirectMessagesService {
       throw new Error("Not authorized for this conversation");
     }
 
+    // Get the existing message
     const existingMessage = await db.query.directMessages.findFirst({
       where: (messages, { eq }) => eq(messages.id, directMessageId),
       with: {
@@ -337,50 +275,26 @@ export class DirectMessagesService {
       throw new Error("Message not found");
     }
 
+    // Check if user owns the message
     const isMessageOwner = existingMessage.member.userId === profileId;
 
     if (!isMessageOwner) {
       throw new Error("Unauthorized: You can only delete your own messages");
     }
 
-    const [deletedMessage] = await db
+    // Soft delete the message
+    await db
       .update(directMessages)
       .set({
         deleted: true,
         content: "This message was deleted",
         updatedAt: new Date(),
       })
-      .where(eq(directMessages.id, directMessageId))
-      .returning();
-
-    return deletedMessage;
+      .where(eq(directMessages.id, directMessageId));
   }
 
-  /**
-   * Toggle reaction on a direct message
-   */
-  async toggleDirectMessageReaction(
-    directMessageId: string,
-    emoji: string,
-    profileId: string,
-    conversationId: string
-  ): Promise<
-    DirectMessage & {
-      member: Member & {
-        user: User;
-      };
-      conversation: Conversation;
-    }
-  > {
-    if (!emoji || !profileId || !conversationId) {
-      throw new Error(
-        "Missing required fields: emoji, profileId, conversationId"
-      );
-    }
-
-    if (!directMessageId) {
-      throw new Error("Missing directMessageId");
-    }
+  async toggleDirectMessageReaction(params: ToggleReactionParams) {
+    const { directMessageId, emoji, profileId, conversationId } = params;
 
     // Get the conversation to verify user is part of it
     const conversation = await db.query.conversations.findFirst({
@@ -403,6 +317,7 @@ export class DirectMessagesService {
       throw new Error("Not authorized for this conversation");
     }
 
+    // Get the message
     const message = await db.query.directMessages.findFirst({
       where: (messages, { eq }) => eq(messages.id, directMessageId),
     });
@@ -411,8 +326,8 @@ export class DirectMessagesService {
       throw new Error("Message not found");
     }
 
+    // Toggle the reaction
     let updatedReactions = message.reactions ?? [];
-
     const reactionKey = `${emoji}:${profileId}`;
     const hasReacted = updatedReactions.includes(reactionKey);
 
@@ -422,6 +337,7 @@ export class DirectMessagesService {
       updatedReactions.push(reactionKey);
     }
 
+    // Update reactions without changing updatedAt
     const [updatedMessage] = await db
       .update(directMessages)
       .set({
@@ -430,6 +346,7 @@ export class DirectMessagesService {
       .where(eq(directMessages.id, directMessageId))
       .returning();
 
+    // Get the complete updated message
     const result = await db.query.directMessages.findFirst({
       where: (messages, { eq }) => eq(messages.id, updatedMessage.id),
       with: {
@@ -442,60 +359,7 @@ export class DirectMessagesService {
       },
     });
 
-    if (!result) {
-      throw new Error("Failed to update reaction");
-    }
-
     return result;
-  }
-
-  /**
-   * Get a single direct message by ID
-   */
-  async getDirectMessageById(
-    messageId: string,
-    userId: string
-  ): Promise<
-    | (DirectMessage & {
-        member: Member & {
-          user: User;
-        };
-      })
-    | null
-  > {
-    const message = await db.query.directMessages.findFirst({
-      where: (messages, { eq }) => eq(messages.id, messageId),
-      with: {
-        member: {
-          with: {
-            user: true,
-          },
-        },
-        conversation: true,
-      },
-    });
-
-    if (!message) {
-      return null;
-    }
-
-    // Verify user has access to this conversation
-    const hasAccess = await db.query.conversations.findFirst({
-      where: (conversations, { eq, and, or }) =>
-        and(
-          eq(conversations.id, message.conversationId),
-          or(
-            eq(conversations.memberOneId, userId),
-            eq(conversations.memberTwoId, userId)
-          )
-        ),
-    });
-
-    if (!hasAccess) {
-      throw new Error("Access denied to this message");
-    }
-
-    return message;
   }
 }
 

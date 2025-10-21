@@ -1,28 +1,26 @@
+// src/routes/messages.routes.ts
 import express from "express";
 import { messagesController } from "../controllers/messagesControllers";
-import { authenticateSocket } from "../middleware/auth";
+import { authenticate } from "../middleware/authMiddleware";
 
 const router = express.Router();
 
-// Apply auth middleware to all routes
-router.use(authenticateSocket);
+// All routes require authentication
+router.use(authenticate);
 
-// GET /api/messages?channelId=:channelId&cursor=:cursor
+// GET /api/messages?channelId=xxx&cursor=xxx
 router.get("/", messagesController.getMessages);
 
-// POST /api/messages?channelId=:channelId&serverId=:serverId
+// POST /api/messages?channelId=xxx&serverId=xxx&profileId=xxx
 router.post("/", messagesController.createMessage);
 
-// GET /api/messages/:messageId
-router.get("/:messageId", messagesController.getMessage);
-
-// PATCH /api/messages/:messageId?channelId=:channelId
+// PATCH /api/messages/:messageId?channelId=xxx&profileId=xxx
 router.patch("/:messageId", messagesController.updateMessage);
 
-// DELETE /api/messages/:messageId?channelId=:channelId
+// DELETE /api/messages/:messageId?channelId=xxx&profileId=xxx
 router.delete("/:messageId", messagesController.deleteMessage);
 
-// POST /api/messages/:messageId/reaction?channelId=:channelId
+// POST /api/messages/:messageId/reaction?channelId=xxx&profileId=xxx
 router.post("/:messageId/reaction", messagesController.toggleReaction);
 
 export default router;

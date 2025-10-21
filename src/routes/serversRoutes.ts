@@ -1,23 +1,15 @@
+// src/routes/servers.routes.ts
 import express from "express";
 import { serversController } from "../controllers/serversController";
-import { authenticateSocket } from "../middleware/auth";
+import { authenticate } from "../middleware/authMiddleware";
 
 const router = express.Router();
 
-// Apply auth middleware to all routes
-router.use(authenticateSocket);
-
-// GET /api/servers
-router.get("/", serversController.getUserServers);
+// All routes require authentication
+router.use(authenticate);
 
 // POST /api/servers
 router.post("/", serversController.createServer);
-
-// POST /api/servers/join
-router.post("/join", serversController.joinServer);
-
-// GET /api/servers/:serverId
-router.get("/:serverId", serversController.getServerById);
 
 // DELETE /api/servers/:serverId
 router.delete("/:serverId", serversController.deleteServer);
@@ -26,7 +18,7 @@ router.delete("/:serverId", serversController.deleteServer);
 router.patch("/:serverId", serversController.updateServer);
 
 // PATCH /api/servers/:serverId/invite-code
-router.patch("/:serverId/invite-code", serversController.generateInviteCode);
+router.patch("/:serverId/invite-code", serversController.regenerateInviteCode);
 
 // PATCH /api/servers/:serverId/leave
 router.patch("/:serverId/leave", serversController.leaveServer);

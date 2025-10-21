@@ -1,26 +1,17 @@
+// src/routes/channel.routes.ts
+import { Router } from "express";
+import { channelController } from "../controllers/channelController";
+import { authenticate } from "../middleware/authMiddleware";
 
-import express from "express";
-import { channelsController } from "../controllers/channelsController";
-import { authenticateSocket } from "../middleware/auth";
+const router = Router();
 
-const router = express.Router();
+// All routes require authentication
+router.use(authenticate);
 
-// Apply auth middleware to all routes
-router.use(authenticateSocket);
+// DELETE /api/channels/:channelId?serverId=xxx
+router.delete("/:channelId", channelController.deleteChannel);
 
-// POST /api/channels?serverId=:serverId
-router.post("/", channelsController.createChannel);
-
-// GET /api/channels/:channelId
-router.get("/:channelId", channelsController.getChannel);
-
-// GET /api/channels?serverId=:serverId
-router.get("/", channelsController.getChannelsByServer);
-
-// DELETE /api/channels/:channelId?serverId=:serverId
-router.delete("/:channelId", channelsController.deleteChannel);
-
-// PATCH /api/channels/:channelId?serverId=:serverId
-router.patch("/:channelId", channelsController.updateChannel);
+// PATCH /api/channels/:channelId?serverId=xxx
+router.patch("/:channelId", channelController.updateChannel);
 
 export default router;
