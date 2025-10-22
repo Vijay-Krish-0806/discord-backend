@@ -3,7 +3,63 @@ import { db } from "../db/database";
 import { channels, ChannelType } from "../db/schema";
 import { and, eq, ne } from "drizzle-orm";
 
+import { v4 as uuidv4 } from "uuid";
+
+interface CreateChannelParams {
+  name: string;
+  type: ChannelType;
+  serverId: string;
+  userId: string;
+}
+
 class ChannelService {
+  async createChannel(params: CreateChannelParams) {
+    const { name, type, serverId, userId } = params;
+
+    // Check if user has permission (ADMIN or MODERATOR)
+    const hasPermission = await db.query.members.findFirst({
+      where: (members, { eq, and, inArray }) =>
+        and(
+          eq(members.serverId, serverId),
+          eq(members.userId, userId),
+          inArray(members.role, ["ADMIN", "MODERATOR"])
+        ),
+    });
+
+    if (!hasPermission) {
+      throw new Error("Insufficient permissions");
+    }
+
+    // Create the channel
+    await db.insert(channels).values({
+      id: uuidv4(),
+      name,
+      type,
+      userId,
+      serverId,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    // Get the updated server with channels and members
+    const server = await db.query.servers.findFirst({
+      where: (servers, { eq }) => eq(servers.id, serverId),
+      with: {
+        channels: {
+          orderBy: (channels, { asc }) => [asc(channels.createdAt)],
+        },
+        members: {
+          with: {
+            user: true,
+          },
+          orderBy: (members, { asc }) => [asc(members.role)],
+        },
+      },
+    });
+
+    return server;
+  }
+
   async deleteChannel(channelId: string, serverId: string, userId: string) {
     // Check if user has permission and channel exists
     const canDelete = await db.query.channels.findFirst({

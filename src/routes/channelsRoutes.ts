@@ -8,6 +8,9 @@ const router = Router();
 // All routes require authentication
 router.use(authenticate);
 
+// POST /api/channels?serverId=xxx
+router.post("/", channelController.createChannel);
+
 // DELETE /api/channels/:channelId?serverId=xxx
 router.delete("/:channelId", channelController.deleteChannel);
 

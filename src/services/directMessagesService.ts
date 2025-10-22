@@ -337,7 +337,6 @@ class DirectMessagesService {
       updatedReactions.push(reactionKey);
     }
 
-    // Update reactions without changing updatedAt
     const [updatedMessage] = await db
       .update(directMessages)
       .set({

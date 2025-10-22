@@ -6,8 +6,9 @@ import { createServer } from "http";
 import { Server } from "socket.io";
 import cors from "cors";
 import helmet from "helmet";
+import cookieParser from "cookie-parser"; // ✅ ADD THIS IMPORT
 import { connectToDB } from "./db/database";
-import { attachUserFromSocket, authenticateSocket } from "./middleware/auth";
+import { authenticateSocket } from "./middleware/auth";
 import { setupSocketServer } from "./socket-server";
 
 // Import all routes
@@ -27,12 +28,22 @@ app.use(
   cors({
     origin: process.env.FRONTEND_URL || "http://localhost:3000",
     credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"], // ✅ ADD OPTIONS
+    allowedHeaders: ["Content-Type", "Authorization"], // ✅ ADD THIS
+    exposedHeaders: ["set-cookie"],
   })
 );
 
 // Security middleware
-app.use(helmet());
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" }, // ✅ ADD THIS
+  })
+);
+
+app.use(cookieParser()); // ✅ MOVE BEFORE ROUTES
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // Socket.IO CORS configuration
 const io = new Server(httpServer, {
@@ -49,8 +60,6 @@ const io = new Server(httpServer, {
 
 app.set("io", io);
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 io.use(authenticateSocket);
 
 // Health check endpoint

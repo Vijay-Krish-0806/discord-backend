@@ -294,7 +294,6 @@ class MessagesService {
       .update(messages)
       .set({
         reactions: updatedReactions,
-        updatedAt: new Date(),
       })
       .where(eq(messages.id, messageId))
       .returning();

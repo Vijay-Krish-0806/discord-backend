@@ -11,6 +11,49 @@ interface AuthRequest extends Request {
 }
 
 class ChannelController {
+  async createChannel(req: AuthRequest, res: Response) {
+    try {
+      const { name, type } = req.body as { name: string; type: ChannelType };
+      const { serverId } = req.query;
+      const userId = req.user?.id;
+
+      if (!userId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      if (!serverId || typeof serverId !== "string") {
+        return res.status(400).json({ error: "ServerId missing" });
+      }
+
+      if (!name || !type) {
+        return res.status(400).json({ error: "Name and type are required" });
+      }
+
+      if (name === "general") {
+        return res.status(400).json({ error: "Name cannot be 'general'" });
+      }
+
+      const server = await channelService.createChannel({
+        name,
+        type,
+        serverId,
+        userId,
+      });
+
+      return res.status(201).json(server);
+    } catch (error) {
+      console.error("[Channel create]", error);
+
+      if (error instanceof Error) {
+        if (error.message.includes("Insufficient permissions")) {
+          return res.status(403).json({ error: error.message });
+        }
+      }
+
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  }
+
   async deleteChannel(req: AuthRequest, res: Response) {
     try {
       const { channelId } = req.params;
@@ -38,16 +81,13 @@ class ChannelController {
       return res.status(200).json(server);
     } catch (error) {
       console.error("[Channel delete]", error);
-
+      
       if (error instanceof Error) {
-        if (
-          error.message.includes("not found") ||
-          error.message.includes("permissions")
-        ) {
+        if (error.message.includes("not found") || error.message.includes("permissions")) {
           return res.status(403).json({ error: error.message });
         }
       }
-
+      
       return res.status(500).json({ error: "Internal server error" });
     }
   }
@@ -85,13 +125,13 @@ class ChannelController {
       return res.status(200).json(server);
     } catch (error) {
       console.error("[Channel update]", error);
-
+      
       if (error instanceof Error) {
         if (error.message.includes("permissions")) {
           return res.status(403).json({ error: error.message });
         }
       }
-
+      
       return res.status(500).json({ error: "Internal server error" });
     }
   }

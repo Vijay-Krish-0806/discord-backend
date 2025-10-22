@@ -114,19 +114,3 @@ export async function authenticateSocket(socket: Socket, next: any) {
   }
 }
 
-
-import { Server } from "socket.io";
-import { NextFunction, Request, Response } from "express";
-
-export const attachUserFromSocket = (io: Server) => {
-  return (req:Request, res:Response, next:NextFunction) => {
-
-    const io = req.app.get("io");
-    console.log(io)
-    if (io?.data?.userId) {
-      (req as any).user = { id: io.data.userId };
-    }
-
-    next();
-  };
-};
