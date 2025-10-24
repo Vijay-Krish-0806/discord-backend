@@ -17,12 +17,12 @@ export async function authenticate(
   next: NextFunction
 ) {
   try {
-    console.log("🔍 [Auth Middleware] Request:", {
-      method: req.method,
-      url: req.url,
-      origin: req.headers.origin,
-      referer: req.headers.referer,
-    });
+    // console.log("🔍 [Auth Middleware] Request:", {
+    //   method: req.method,
+    //   url: req.url,
+    //   origin: req.headers.origin,
+    //   referer: req.headers.referer,
+    // });
 
     const authHeader = req.headers.authorization;
     let token: string | undefined;
@@ -55,7 +55,6 @@ export async function authenticate(
       return res.status(401).json({ error: "Unauthorized - Invalid token" });
     }
 
-    // Check if session is expired
     if (session.expiresAt < new Date()) {
       console.log("❌ Session expired:", session.expiresAt);
       return res.status(401).json({ error: "Unauthorized - Token expired" });

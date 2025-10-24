@@ -80,6 +80,7 @@
 // }
 
 const onlineUsers = new Map<string, Set<string>>();
+const userActiveChannel = new Map<string, string>();
 
 export function setupSocketServer(io: any) {
   io.on("connection", async (socket: any) => {
@@ -123,11 +124,17 @@ export function setupSocketServer(io: any) {
 
     // ========== ROOM MANAGEMENT ==========
     socket.on("joinRoom", (roomId: string) => {
+      console.log("join-room", roomId, socket.data.userId);
       socket.join(roomId);
+      userActiveChannel.set(socket.data.userId, roomId);
     });
 
     socket.on("leaveRoom", (roomId: string) => {
+      console.log("leave-room", roomId, socket.data.userId);
+
       socket.leave(roomId);
+      const current = userActiveChannel.get(socket.data.userId);
+      if (current === roomId) userActiveChannel.delete(socket.data.userId);
     });
 
     // ========== TYPING INDICATOR ==========
@@ -172,4 +179,7 @@ export function setupSocketServer(io: any) {
     console.log("📋 Current online users:", users);
     return users;
   };
+  io.onlineUsers = onlineUsers;
+
+  io.userActiveChannels = userActiveChannel;
 }
