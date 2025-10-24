@@ -5,8 +5,7 @@ import express from "express";
 import { createServer } from "http";
 import { Server } from "socket.io";
 import cors from "cors";
-import helmet from "helmet";
-import cookieParser from "cookie-parser"; // ✅ ADD THIS IMPORT
+import cookieParser from "cookie-parser"; //
 import { connectToDB } from "./db/database";
 import { authenticateSocket } from "./middleware/auth";
 import { setupSocketServer } from "./socket-server";
@@ -28,18 +27,12 @@ app.use(
   cors({
     origin: process.env.FRONTEND_URL || "http://localhost:3000",
     credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"], // ✅ ADD OPTIONS
-    allowedHeaders: ["Content-Type", "Authorization"], // ✅ ADD THIS
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"], 
+    allowedHeaders: ["Content-Type", "Authorization"],
     exposedHeaders: ["set-cookie"],
   })
 );
 
-// Security middleware
-app.use(
-  helmet({
-    crossOriginResourcePolicy: { policy: "cross-origin" }, // ✅ ADD THIS
-  })
-);
 
 app.use(cookieParser()); // ✅ MOVE BEFORE ROUTES
 app.use(express.json());
@@ -62,19 +55,7 @@ app.set("io", io);
 
 io.use(authenticateSocket);
 
-// Health check endpoint
-app.get("/health", async (req, res) => {
-  res.json({
-    status: "ok",
-    timestamp: Date.now(),
-    socketConnections: io.engine.clientsCount,
-  });
-});
 
-// Test endpoint
-app.get("/api/test", (req, res) => {
-  res.json({ message: "Backend is working!" });
-});
 
 // API Routes
 app.use("/api/messages", messageRoutes);

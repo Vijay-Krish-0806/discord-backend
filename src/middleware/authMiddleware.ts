@@ -27,27 +27,13 @@ export async function authenticate(
     const authHeader = req.headers.authorization;
     let token: string | undefined;
 
-    console.log("🍪 Cookies received:", req.cookies);
-    console.log("📋 All cookie names:", Object.keys(req.cookies || {}));
-
     if (authHeader?.startsWith("Bearer ")) {
       token = authHeader.substring(7);
       console.log("🔑 Using Bearer token:", token);
     } else if (req.cookies?.["better-auth.session_token"]) {
       const betterAuthCookie = req.cookies["better-auth.session_token"];
       token = betterAuthCookie.split(".")[0];
-      console.log(
-        "🍪 Using better-auth.session_token, extracted token:",
-        token
-      );
-    } else if (req.cookies?.better_auth) {
-      // Fallback: check for better_auth without .session_token
-      const betterAuthCookie = req.cookies.better_auth;
-      token = betterAuthCookie.split(".")[0];
-      console.log("🍪 Using better_auth (fallback), extracted token:", token);
     }
-
-    console.log("🎯 Final token:", token);
 
     if (!token) {
       console.log("❌ No token found");
@@ -74,8 +60,6 @@ export async function authenticate(
       console.log("❌ Session expired:", session.expiresAt);
       return res.status(401).json({ error: "Unauthorized - Token expired" });
     }
-
-    console.log("✅ Authentication successful for user:", session.user.email);
 
     // Attach user to request
     req.user = {
