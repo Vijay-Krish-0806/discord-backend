@@ -62,93 +62,6 @@ class NotificationsService {
 
 export const notificationsService = new NotificationsService();
 
-/**
- * Create notifications for offline users when a message is sent
- * Used by messages controller
- */
-// export async function createNotificationsForOfflineUsers(
-//   channelId: string,
-//   messageId: string,
-//   senderId: string,
-//   senderName: string,
-//   content: string,
-//   io: any
-// ) {
-//   try {
-//     const channel = await db.query.channels.findFirst({
-//       where: (channels, { eq }) => eq(channels.id, channelId),
-//       with: {
-//         server: {
-//           with: {
-//             members: {
-//               with: {
-//                 user: true,
-//               },
-//             },
-//           },
-//         },
-//       },
-//     });
-
-//     if (!channel) return;
-
-//     const allMembers = channel.server.members;
-
-//     // Get online statuses
-//     const memberUserIds = allMembers.map((m) => m.userId);
-//     const onlineStatuses = await db.query.userPresence.findMany({
-//       where: (userPresence, { inArray }) =>
-//         inArray(userPresence.userId, memberUserIds),
-//     });
-
-//     const onlineUserIds = onlineStatuses
-//       .filter((status) => status.isOnline)
-//       .map((status) => status.userId);
-
-//     // Filter members NOT currently viewing this channel (offline + not in socket room)
-//     const offlineMembers = allMembers.filter(
-//       (member) =>
-//         !onlineUserIds.includes(member.userId) && member.userId !== senderId
-//     );
-
-//     // Create notifications for offline members
-//     if (offlineMembers.length > 0) {
-//       const notificationValues = offlineMembers.map((member) => ({
-//         userId: member.userId,
-//         type: "CHANNEL_MESSAGE" as const,
-//         title: `New message in #${channel.name}`,
-//         message: `${senderName}: ${content.substring(0, 100)}${
-//           content.length > 100 ? "..." : ""
-//         }`,
-//         channelId: channelId,
-//         messageId: messageId,
-//         senderId: senderId,
-//         isRead: false,
-//       }));
-
-//       await db.insert(notifications).values(notificationValues);
-
-//       // Emit real-time notification to recipients who are online
-//       offlineMembers.forEach((member) => {
-//         io.to(`user:${member.userId}`).emit("newNotification", {
-//           userId: member.userId,
-//           type: "CHANNEL_MESSAGE",
-//           title: `New message in #${channel.name}`,
-//           message: `${senderName}: ${content.substring(0, 100)}${
-//             content.length > 100 ? "..." : ""
-//           }`,
-//           channelId: channelId,
-//         });
-//       });
-
-//       console.log(
-//         `🔔 Created ${notificationValues.length} notifications for offline users in #${channel.name}`
-//       );
-//     }
-//   } catch (error) {
-//     console.error("Error creating notifications:", error);
-//   }
-// }
 
 export async function createNotificationsForOfflineUsers(
   channelId: string,
@@ -251,5 +164,97 @@ export async function createNotificationsForOfflineUsers(
     );
   } catch (error) {
     console.error("Error creating notifications:", error);
+  }
+}
+
+export async function createNotificationsForDM(
+  conversationId: string,
+  messageId: string,
+  senderId: string,
+  senderName: string,
+  content: string,
+  io: any
+) {
+  try {
+    const conversation = await db.query.conversations.findFirst({
+      where: (conversations, { eq }) => eq(conversations.id, conversationId),
+      with: {
+        memberOne: {
+          with: {
+            user: true,
+          },
+        },
+        memberTwo: {
+          with: {
+            user: true,
+          },
+        },
+      },
+    });
+
+    if (!conversation) return;
+
+    // Determine recipient (the person who is NOT the sender)
+    const recipientMember =
+      conversation.memberOne.userId === senderId
+        ? conversation.memberTwo
+        : conversation.memberOne;
+
+    const recipientId = recipientMember.userId;
+    const onlineUsers: Array<string> = io.getOnlineUsers() || [];
+    const onlineUsersMap: Map<string, Set<string>> = io.onlineUsers;
+    const userActiveChannel: Map<string, string> =
+      io.userActiveChannels || new Map();
+
+    // Check if recipient is viewing this conversation
+    const isViewingConversation =
+      onlineUsers.includes(recipientId) &&
+      userActiveChannel.get(recipientId) === conversationId;
+
+    // Don't notify if they're actively viewing the conversation
+    if (isViewingConversation) {
+      console.log(
+        `ℹ️ Skipping notification - ${recipientId} is viewing conversation`
+      );
+      return;
+    }
+
+    // Create notification
+    const notificationValue = {
+      userId: recipientId,
+      type: "DIRECT_MESSAGE" as const,
+      title: `New message from ${senderName}`,
+      message: `${content.substring(0, 100)}${
+        content.length > 100 ? "..." : ""
+      }`,
+      conversationId,
+      messageId,
+      senderId,
+      isRead: false,
+    };
+
+    await db.insert(notifications).values(notificationValue);
+
+    // Send real-time notification if user is online (but not viewing conversation)
+    const recipientSockets = onlineUsersMap.get(recipientId);
+    if (recipientSockets && recipientSockets.size > 0) {
+      for (const socketId of recipientSockets) {
+        io.to(socketId).emit("newNotification", {
+          userId: recipientId,
+          type: "DIRECT_MESSAGE",
+          title: `New message from ${senderName}`,
+          message: `${content.substring(0, 100)}${
+            content.length > 100 ? "..." : ""
+          }`,
+          conversationId,
+          messageId,
+          senderId,
+        });
+      }
+    }
+
+    console.log(`🔔 Created DM notification for ${recipientId} from ${senderName}`);
+  } catch (error) {
+    console.error("Error creating DM notification:", error);
   }
 }

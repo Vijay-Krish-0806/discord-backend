@@ -294,30 +294,7 @@ export const friendRequestsRelations = relations(friendRequests, ({ one }) => ({
   }),
 }));
 
-// ---------- USER PRESENCE ----------
-// Track online/offline status and last seen
-export const userPresence = pgTable(
-  "user_presence",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    userId: text("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" })
-      .unique(),
-    isOnline: boolean("is_online").notNull().default(false),
-    lastSeen: timestamp("last_seen", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    socketId: text("socket_id"), // Current socket connection
-    updatedAt: timestamp("updated_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (table) => [
-    index("user_presence_user_id_idx").on(table.userId),
-    index("user_presence_is_online_idx").on(table.isOnline),
-  ]
-);
+
 
 // ---------- NOTIFICATIONS ----------
 export const notifications = pgTable(
@@ -352,13 +329,7 @@ export const notifications = pgTable(
   ]
 );
 
-// ---------- RELATIONS ----------
-export const userPresenceRelations = relations(userPresence, ({ one }) => ({
-  user: one(users, {
-    fields: [userPresence.userId],
-    references: [users.id],
-  }),
-}));
+
 
 export const notificationsRelations = relations(notifications, ({ one }) => ({
   user: one(users, {

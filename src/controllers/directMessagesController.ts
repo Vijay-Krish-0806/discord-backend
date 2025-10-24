@@ -1,6 +1,7 @@
 // src/controllers/directMessages.controller.ts
 import { Request, Response } from "express";
 import { directMessagesService } from "../services/directMessagesService";
+import { createNotificationsForDM } from "../services/notificationsService";
 
 interface AuthRequest extends Request {
   user?: {
@@ -58,6 +59,15 @@ class DirectMessagesController {
       if (io && result) {
         const addKey = `chat:${conversationId}:messages`;
         io.to(conversationId as string).emit(addKey, result);
+
+        await createNotificationsForDM(
+          conversationId as string,
+          result.id,
+          result.member.userId,
+          result.member.user.name || "Someone",
+          content,
+          io
+        );
         console.log(`📢 Emitted message to ${addKey}`);
       }
 

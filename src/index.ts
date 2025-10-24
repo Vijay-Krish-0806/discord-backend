@@ -27,12 +27,11 @@ app.use(
   cors({
     origin: process.env.FRONTEND_URL || "http://localhost:3000",
     credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"], 
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
     exposedHeaders: ["set-cookie"],
   })
 );
-
 
 app.use(cookieParser()); // ✅ MOVE BEFORE ROUTES
 app.use(express.json());
@@ -54,8 +53,6 @@ const io = new Server(httpServer, {
 app.set("io", io);
 
 io.use(authenticateSocket);
-
-
 
 // API Routes
 app.use("/api/messages", messageRoutes);
@@ -110,10 +107,6 @@ async function startServer() {
 
     httpServer.listen(PORT, () => {
       console.log(`🚀 Server running on http://localhost:${PORT}`);
-      console.log(`📡 Socket.IO server ready`);
-      console.log(
-        `🌍 CORS origin: ${process.env.FRONTEND_URL || "http://localhost:3000"}`
-      );
     });
   } catch (error) {
     console.error("❌ Server startup error:", error);

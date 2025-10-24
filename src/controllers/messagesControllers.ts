@@ -2,6 +2,9 @@
 import { Request, Response } from "express";
 import { messagesService } from "../services/messagesServices";
 import { createNotificationsForOfflineUsers } from "./notificationController";
+import { db } from "../db/database";
+import { messages } from "../db/schema";
+import { eq, inArray, sql } from "drizzle-orm";
 
 interface AuthRequest extends Request {
   user?: {
@@ -88,6 +91,7 @@ class MessagesController {
     }
   }
 
+ 
   async updateMessage(req: AuthRequest, res: Response) {
     try {
       const { messageId } = req.params;

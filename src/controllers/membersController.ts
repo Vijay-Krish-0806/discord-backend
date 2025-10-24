@@ -76,6 +76,7 @@ class MembersController {
       const { role } = req.body as { role: MemberRole };
       const { serverId } = req.query;
       const userId = req.user?.id;
+      console.log("update member role");
 
       if (!userId) {
         return res.status(401).json({ error: "Unauthorized" });
